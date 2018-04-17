@@ -12,7 +12,8 @@ const langTools = ace.acequire('ace/ext/language_tools');
 const keywords = (
   'SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|AND|OR|GROUP|BY|ORDER|LIMIT|OFFSET|HAVING|AS|CASE|' +
   'WHEN|ELSE|END|TYPE|LEFT|RIGHT|JOIN|ON|OUTER|DESC|ASC|UNION|CREATE|TABLE|PRIMARY|KEY|IF|' +
-  'FOREIGN|NOT|REFERENCES|DEFAULT|NULL|INNER|CROSS|NATURAL|DATABASE|DROP|GRANT'
+  'FOREIGN|NOT|REFERENCES|DEFAULT|NULL|INNER|CROSS|NATURAL|DATABASE|DROP|GRANT|SUM|MAX|MIN|COUNT|' +
+  'AVG|DISTINCT'
 );
 
 const dataTypes = (
@@ -21,7 +22,7 @@ const dataTypes = (
 );
 
 const sqlKeywords = [].concat(keywords.split('|'), dataTypes.split('|'));
-const sqlWords = sqlKeywords.map(s => ({
+export const sqlWords = sqlKeywords.map(s => ({
   name: s, value: s, score: 60, meta: 'sql',
 }));
 
@@ -37,10 +38,12 @@ const propTypes = {
     descr: PropTypes.string.isRequired,
     func: PropTypes.func.isRequired,
   })),
+  onChange: PropTypes.func,
 };
 
 const defaultProps = {
   onBlur: () => {},
+  onChange: () => {},
   tables: [],
 };
 
@@ -51,6 +54,7 @@ class AceEditorWrapper extends React.PureComponent {
       sql: props.sql,
       selectedText: '',
     };
+    this.onChange = this.onChange.bind(this);
   }
   componentDidMount() {
     // Making sure no text is selected from previous mount
@@ -97,6 +101,10 @@ class AceEditorWrapper extends React.PureComponent {
       }
     });
   }
+  onChange(text) {
+    this.setState({ sql: text });
+    this.props.onChange(text);
+  }
   getCompletions(aceEditor, session, pos, prefix, callback) {
     callback(null, this.state.words);
   }
@@ -125,9 +133,6 @@ class AceEditorWrapper extends React.PureComponent {
       }
     });
   }
-  textChange(text) {
-    this.setState({ sql: text });
-  }
   render() {
     return (
       <AceEditor
@@ -136,7 +141,7 @@ class AceEditorWrapper extends React.PureComponent {
         onLoad={this.onEditorLoad.bind(this)}
         onBlur={this.onBlur.bind(this)}
         height={this.props.height}
-        onChange={this.textChange.bind(this)}
+        onChange={this.onChange}
         width="100%"
         editorProps={{ $blockScrolling: true }}
         enableLiveAutocompletion

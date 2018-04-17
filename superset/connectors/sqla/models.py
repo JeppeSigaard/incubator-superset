@@ -268,6 +268,7 @@ class SqlaTable(Model, BaseDatasource):
         foreign_keys=[database_id])
     schema = Column(String(255))
     sql = Column(Text)
+    is_sqllab_view = Column(Boolean, default=False)
 
     baselink = 'tablemodelview'
 
@@ -376,7 +377,7 @@ class SqlaTable(Model, BaseDatasource):
         if self.type == 'table':
             grains = self.database.grains() or []
             if grains:
-                grains = [(g.name, g.name) for g in grains]
+                grains = [(g.duration, g.name) for g in grains]
             d['granularity_sqla'] = utils.choicify(self.dttm_cols)
             d['time_grain_sqla'] = grains
         return d
@@ -446,10 +447,18 @@ class SqlaTable(Model, BaseDatasource):
         return self.get_sqla_table()
 
     def adhoc_metric_to_sa(self, metric):
-        column_name = metric.get('column').get('column_name')
-        sa_metric = self.sqla_aggregations[metric.get('aggregate')](column(column_name))
-        sa_metric = sa_metric.label(metric.get('label'))
-        return sa_metric
+        expressionType = metric.get('expressionType')
+        if expressionType == utils.ADHOC_METRIC_EXPRESSION_TYPES['SIMPLE']:
+            sa_column = column(metric.get('column').get('column_name'))
+            sa_metric = self.sqla_aggregations[metric.get('aggregate')](sa_column)
+            sa_metric = sa_metric.label(metric.get('label'))
+            return sa_metric
+        elif expressionType == utils.ADHOC_METRIC_EXPRESSION_TYPES['SQL']:
+            sa_metric = literal_column(metric.get('sqlExpression'))
+            sa_metric = sa_metric.label(metric.get('label'))
+            return sa_metric
+        else:
+            return None
 
     def get_sqla_query(  # sqla
             self,
@@ -477,6 +486,9 @@ class SqlaTable(Model, BaseDatasource):
             'metrics': metrics,
             'row_limit': row_limit,
             'to_dttm': to_dttm,
+            'filter': filter,
+            'columns': {col.column_name: col for col in self.columns},
+
         }
         template_processor = self.get_template_processor(**template_kwargs)
         db_engine_spec = self.database.db_engine_spec
@@ -815,6 +827,10 @@ class SqlaTable(Model, BaseDatasource):
         if schema:
             query = query.filter_by(schema=schema)
         return query.all()
+
+    @staticmethod
+    def default_query(qry):
+        return qry.filter_by(is_sqllab_view=False)
 
 
 sa.event.listen(SqlaTable, 'after_insert', set_perm)

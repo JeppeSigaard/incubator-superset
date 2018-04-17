@@ -25,13 +25,7 @@ import zlib
 import bleach
 import celery
 from dateutil.parser import parse
-from flask import flash, Markup, redirect, render_template, request, url_for
-from flask_appbuilder._compat import as_unicode
-from flask_appbuilder.const import (
-    FLAMSG_ERR_SEC_ACCESS_DENIED,
-    LOGMSG_ERR_SEC_ACCESS_DENIED,
-    PERMISSION_PREFIX,
-)
+from flask import flash, Markup, render_template
 from flask_babel import gettext as __
 from flask_cache import Cache
 import markdown as md
@@ -53,6 +47,12 @@ logging.getLogger('MARKDOWN').setLevel(logging.INFO)
 PY3K = sys.version_info >= (3, 0)
 EPOCH = datetime(1970, 1, 1)
 DTTM_ALIAS = '__timestamp'
+ADHOC_METRIC_EXPRESSION_TYPES = {
+    'SIMPLE': 'SIMPLE',
+    'SQL': 'SQL',
+}
+
+JS_MAX_INTEGER = 9007199254740991   # Largest int Java Script can handle 2^53-1
 
 
 def flasher(msg, severity=None):
@@ -653,42 +653,6 @@ def get_email_address_list(address_string):
     return address_string
 
 
-def has_access(f):
-    """
-        Use this decorator to enable granular security permissions to your
-        methods. Permissions will be associated to a role, and roles are
-        associated to users.
-
-        By default the permission's name is the methods name.
-
-        Forked from the flask_appbuilder.security.decorators
-        TODO(bkyryliuk): contribute it back to FAB
-    """
-    if hasattr(f, '_permission_name'):
-        permission_str = f._permission_name
-    else:
-        permission_str = f.__name__
-
-    def wraps(self, *args, **kwargs):
-        permission_str = PERMISSION_PREFIX + f._permission_name
-        if self.appbuilder.sm.has_access(permission_str,
-                                         self.__class__.__name__):
-            return f(self, *args, **kwargs)
-        else:
-            logging.warning(
-                LOGMSG_ERR_SEC_ACCESS_DENIED.format(permission_str,
-                                                    self.__class__.__name__))
-            flash(as_unicode(FLAMSG_ERR_SEC_ACCESS_DENIED), 'danger')
-        # adds next arg to forward to the original path once user is logged in.
-        return redirect(
-            url_for(
-                self.appbuilder.sm.auth_view.__class__.__name__ + '.login',
-                next=request.full_path))
-
-    f._permission_name = permission_str
-    return functools.update_wrapper(wraps, f)
-
-
 def choicify(values):
     """Takes an iterable and makes an iterable of tuples with it"""
     return [(v, v) for v in values]
@@ -844,10 +808,21 @@ def get_or_create_main_db():
 
 
 def is_adhoc_metric(metric):
-    return (isinstance(metric, dict) and
-            metric['column'] and
-            metric['aggregate'] and
-            metric['label'])
+    return (
+        isinstance(metric, dict) and
+        (
+            (
+                metric['expressionType'] == ADHOC_METRIC_EXPRESSION_TYPES['SIMPLE'] and
+                metric['column'] and
+                metric['aggregate']
+            ) or
+            (
+                metric['expressionType'] == ADHOC_METRIC_EXPRESSION_TYPES['SQL'] and
+                metric['sqlExpression']
+            )
+        ) and
+        metric['label']
+    )
 
 
 def get_metric_names(metrics):
